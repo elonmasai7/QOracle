@@ -105,3 +105,24 @@ class BillingRecord(BaseModel):
     units = db.Column(db.Float, nullable=False)
     unit_price = db.Column(db.Float, nullable=False)
     total = db.Column(db.Float, nullable=False)
+
+
+class ApiKey(BaseModel):
+    __tablename__ = "apikeys"
+    name = db.Column(db.String(100), nullable=False)
+    key_prefix = db.Column(db.String(24), nullable=False, index=True)
+    key_hash = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(50), nullable=False, default="analyst")
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    expires_at = db.Column(db.DateTime, nullable=True)
+    last_used_at = db.Column(db.DateTime, nullable=True)
+
+
+class WebhookSubscription(BaseModel):
+    __tablename__ = "webhooksubscriptions"
+    target_url = db.Column(db.String(1024), nullable=False)
+    event_type = db.Column(db.String(100), nullable=False, default="risk.completed")
+    signing_secret = db.Column(db.String(255), nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    last_status = db.Column(db.String(50), nullable=True)
+    last_attempt_at = db.Column(db.DateTime, nullable=True)
