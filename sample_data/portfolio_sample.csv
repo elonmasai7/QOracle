@@ -1,0 +1,6 @@
+symbol,quantity,price,asset_class
+AAPL,1200,195.30,equity
+MSFT,900,420.15,equity
+TLT,1500,92.40,fixed_income
+XLF,1800,39.70,etf
+EURUSD,500000,1.09,fx

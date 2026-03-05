@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantumrisk-backend-canary
+  labels:
+    app: quantumrisk-backend
+    track: canary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quantumrisk-backend
+      track: canary
+  template:
+    metadata:
+      labels:
+        app: quantumrisk-backend
+        track: canary
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/your-org/quantumrisk-backend:canary
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: quantumrisk-secrets
