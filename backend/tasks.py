@@ -16,6 +16,7 @@ from .services.risk_engine import (
 )
 from .quantum.hybrid_runner import run_hybrid_benchmark
 from .services.audit import write_audit_log
+from .services.webhook_dispatch import dispatch_event
 
 
 celery = Celery(__name__)
@@ -125,6 +126,18 @@ def run_risk_job(self, tenant_id, portfolio_id, mode="hybrid", paths=10000, hori
     write_audit_log(tenant_id, "risk_run", "risk", {"portfolio_id": portfolio_id, "mode": mode})
 
     runtime_ms = int((time.time() - started) * 1000)
+    dispatch_event(
+        uuid.UUID(tenant_id),
+        "risk.completed",
+        {
+            "event": "risk.completed",
+            "portfolio_id": portfolio_id,
+            "metrics": metrics,
+            "stress_metrics": stress_metrics,
+            "composite_risk_score": risk_score,
+            "runtime_ms": runtime_ms,
+        },
+    )
     return {
         "portfolio_id": portfolio_id,
         "metrics": metrics,

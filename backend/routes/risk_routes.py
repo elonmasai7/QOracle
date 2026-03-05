@@ -1,7 +1,5 @@
-import uuid
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import get_jwt, jwt_required
-from ..auth import role_required
+from ..auth import auth_required, get_auth_context, role_required
 from ..extensions import limiter
 from ..tasks import run_risk_job
 
@@ -10,12 +8,12 @@ risk_bp = Blueprint("risk", __name__, url_prefix="/api/v1/risk")
 
 
 @risk_bp.post("/run")
-@jwt_required()
+@auth_required
 @role_required("admin", "analyst")
 @limiter.limit("30/minute")
 def run_risk():
-    claims = get_jwt()
-    tenant_id = claims["tenant_id"]
+    ctx = get_auth_context()
+    tenant_id = ctx["tenant_id"]
     payload = request.get_json(force=True)
 
     portfolio_id = payload.get("portfolio_id")
@@ -34,7 +32,7 @@ def run_risk():
 
 
 @risk_bp.get("/task/<task_id>")
-@jwt_required()
+@auth_required
 def risk_task_status(task_id):
     result = run_risk_job.AsyncResult(task_id)
     if result.successful():

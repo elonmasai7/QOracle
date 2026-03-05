@@ -110,3 +110,32 @@ CREATE TABLE IF NOT EXISTS billingrecords (
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS apikeys (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+  name VARCHAR(100) NOT NULL,
+  key_prefix VARCHAR(24) NOT NULL,
+  key_hash VARCHAR(255) NOT NULL,
+  role VARCHAR(50) NOT NULL DEFAULT 'analyst',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  expires_at TIMESTAMP NULL,
+  last_used_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_apikeys_tenant_prefix ON apikeys(tenant_id, key_prefix);
+
+CREATE TABLE IF NOT EXISTS webhooksubscriptions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+  target_url VARCHAR(1024) NOT NULL,
+  event_type VARCHAR(100) NOT NULL DEFAULT 'risk.completed',
+  signing_secret VARCHAR(255) NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  last_status VARCHAR(50) NULL,
+  last_attempt_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);

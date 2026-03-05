@@ -29,3 +29,4 @@ class Config:
 
     MODEL_REGISTRY_PATH = os.getenv("MODEL_REGISTRY_PATH", "/app/backend/ml/registry")
     ENABLE_SHAP = os.getenv("ENABLE_SHAP", "false").lower() == "true"
+    WEBHOOK_REQUEST_TIMEOUT_SECONDS = int(os.getenv("WEBHOOK_REQUEST_TIMEOUT_SECONDS", "5"))

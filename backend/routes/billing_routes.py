@@ -1,6 +1,6 @@
 import uuid
 from flask import Blueprint, jsonify
-from flask_jwt_extended import get_jwt, jwt_required
+from ..auth import auth_required, get_auth_context
 from ..models import BillingRecord
 
 
@@ -8,10 +8,10 @@ billing_bp = Blueprint("billing", __name__, url_prefix="/api/v1/billing")
 
 
 @billing_bp.get("/usage")
-@jwt_required()
+@auth_required
 def usage():
-    claims = get_jwt()
-    tenant_id = claims["tenant_id"]
+    ctx = get_auth_context()
+    tenant_id = ctx["tenant_id"]
     rows = BillingRecord.query.filter_by(tenant_id=uuid.UUID(tenant_id)).all()
     return jsonify(
         [

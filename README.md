@@ -12,6 +12,10 @@ QuantumRisk Oracle is a U.S.-oriented enterprise SaaS platform for portfolio ris
 - Compliance report exports (JSON/CSV/PDF placeholder)
 - Async risk jobs via Celery + Redis
 - Usage-based quantum billing records
+- Enterprise API-key authentication (`X-API-Key`)
+- Signed outbound webhook subscriptions (`risk.completed`)
+- Real PDF compliance rendering
+- SHAP explainability endpoints for credit risk model
 - Prometheus metrics, structured JSON logs, audit trail records
 
 ## Architecture
@@ -121,5 +125,13 @@ pytest -q
 
 ## Notes
 - Quantum block uses Qiskit runtime-compatible design with safe classical fallback.
-- PDF export endpoint is placeholder-ready for WeasyPrint/ReportLab integration.
+- PDF export endpoint generates binary PDF documents using ReportLab.
 - ERP/API integrations should be implemented via dedicated ingestion connectors under `backend/routes` + `backend/services`.
+
+## Enterprise Features
+- API Key management: `/api/v1/api-keys` (create/list/revoke; admin role)
+- Any protected endpoint supports JWT or API key auth
+- Signed webhooks: configure `/api/v1/webhooks/subscriptions`; outgoing signature `t=<ts>,v1=<hmac>`
+- Explainability:
+1. `POST /api/v1/explain/credit`
+2. `POST /api/v1/explain/credit/batch`

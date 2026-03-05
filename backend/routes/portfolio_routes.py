@@ -2,8 +2,7 @@ import csv
 import io
 import uuid
 from flask import Blueprint, jsonify, request
-from flask_jwt_extended import get_jwt, jwt_required
-from ..auth import role_required
+from ..auth import auth_required, get_auth_context, role_required
 from ..extensions import db
 from ..models import Portfolio, Asset
 from ..services.audit import write_audit_log
@@ -13,18 +12,17 @@ portfolio_bp = Blueprint("portfolio", __name__, url_prefix="/api/v1/portfolios")
 
 
 @portfolio_bp.post("/upload")
-@jwt_required()
+@auth_required
 @role_required("admin", "analyst")
 def upload_portfolio():
-    claims = get_jwt()
-    tenant_id = claims["tenant_id"]
+    ctx = get_auth_context()
+    tenant_id = ctx["tenant_id"]
 
     name = request.form.get("name", "Uploaded Portfolio")
     f = request.files.get("file")
     if not f:
         return jsonify({"error": "file_required"}), 400
 
-    # Minimal upload safety gate; plug in ClamAV sidecar in production.
     if not f.filename.endswith(".csv"):
         return jsonify({"error": "only_csv_allowed"}), 400
 
@@ -46,15 +44,21 @@ def upload_portfolio():
         db.session.add(asset)
 
     db.session.commit()
-    write_audit_log(tenant_id, "portfolio_upload", "portfolio", {"portfolio_id": str(portfolio.id)})
+    write_audit_log(
+        tenant_id,
+        "portfolio_upload",
+        "portfolio",
+        {"portfolio_id": str(portfolio.id)},
+        user_id=ctx.get("user_id"),
+    )
     return jsonify({"portfolio_id": str(portfolio.id)}), 201
 
 
 @portfolio_bp.get("/")
-@jwt_required()
+@auth_required
 def list_portfolios():
-    claims = get_jwt()
-    tenant_id = claims["tenant_id"]
+    ctx = get_auth_context()
+    tenant_id = ctx["tenant_id"]
 
     rows = Portfolio.query.filter_by(tenant_id=uuid.UUID(tenant_id)).all()
     return jsonify(

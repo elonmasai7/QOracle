@@ -3,19 +3,20 @@ import io
 import json
 import uuid
 from flask import Blueprint, jsonify, request, Response
-from flask_jwt_extended import get_jwt, jwt_required
+from ..auth import auth_required, get_auth_context
 from ..models import RiskResult, Portfolio
 from ..services.compliance import build_compliance_report
+from ..services.pdf_report import generate_compliance_pdf
 
 
 report_bp = Blueprint("report", __name__, url_prefix="/api/v1/reports")
 
 
 @report_bp.get("/compliance/<portfolio_id>")
-@jwt_required()
+@auth_required
 def compliance_report(portfolio_id):
-    claims = get_jwt()
-    tenant_id = claims["tenant_id"]
+    ctx = get_auth_context()
+    tenant_id = ctx["tenant_id"]
 
     pf = Portfolio.query.filter_by(id=uuid.UUID(portfolio_id), tenant_id=uuid.UUID(tenant_id)).first()
     if not pf:
@@ -53,7 +54,13 @@ def compliance_report(portfolio_id):
         return Response(output.getvalue(), mimetype="text/csv")
 
     if fmt == "pdf":
-        # Placeholder for real PDF generator like WeasyPrint.
-        return Response(f"PDF generation queued for portfolio {pf.name}", mimetype="application/pdf")
+        pdf_data = generate_compliance_pdf(report)
+        return Response(
+            pdf_data,
+            mimetype="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=compliance_report_{portfolio_id}.pdf"
+            },
+        )
 
     return Response(json.dumps(report, indent=2), mimetype="application/json")

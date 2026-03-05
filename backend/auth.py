@@ -1,6 +1,5 @@
 from datetime import datetime
 from functools import wraps
-import uuid
 from flask import jsonify, g, request
 from flask_jwt_extended import (
     get_jwt,

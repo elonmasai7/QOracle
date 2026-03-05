@@ -1,23 +1,15 @@
-import hashlib
-import hmac
 import json
 import logging
 import time
 from datetime import datetime
+from flask import current_app
 import requests
 from ..extensions import db
 from ..models import WebhookSubscription
+from .webhook_signing import build_webhook_signature
 
 
 logger = logging.getLogger(__name__)
-
-
-def build_webhook_signature(secret: str, payload_body: str, timestamp: int) -> str:
-    signed_payload = f"{timestamp}.{payload_body}".encode("utf-8")
-    digest = hmac.new(secret.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
-    return f"t={timestamp},v1={digest}"
-
-
 def dispatch_event(tenant_id, event_type: str, payload: dict):
     body = json.dumps(payload, separators=(",", ":"), sort_keys=True)
     timestamp = int(time.time())
@@ -36,7 +28,8 @@ def dispatch_event(tenant_id, event_type: str, payload: dict):
             "X-QRO-Signature": signature,
         }
         try:
-            resp = requests.post(sub.target_url, data=body, headers=headers, timeout=5)
+            timeout = current_app.config.get("WEBHOOK_REQUEST_TIMEOUT_SECONDS", 5)
+            resp = requests.post(sub.target_url, data=body, headers=headers, timeout=timeout)
             sub.last_status = f"{resp.status_code}"
         except Exception as exc:
             sub.last_status = f"error:{type(exc).__name__}"
