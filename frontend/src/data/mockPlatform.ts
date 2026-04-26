@@ -165,6 +165,17 @@ export const mockSnapshot: DashboardSnapshot = {
     { name: 'Treasury Workflow', scope: 'read:reports write:risk', lastUsed: '11 minutes ago', status: 'Active' },
     { name: 'Audit Export', scope: 'read:audit', lastUsed: '2 hours ago', status: 'Restricted' },
   ],
+  securityControls: [
+    'JWT and API-key authentication',
+    'Signed outbound webhooks',
+    'Rate limiting and audit trails',
+    'Compliance export governance',
+  ],
+  rbacRoles: [
+    { role: 'admin', capabilities: ['manage_users', 'rotate_keys', 'approve_reports'] },
+    { role: 'analyst', capabilities: ['run_risk', 'create_reports', 'view_audit'] },
+    { role: 'auditor', capabilities: ['view_audit', 'view_reports'] },
+  ],
   exposures: [
     { desk: 'Global Macro', allocation: 31, varContribution: 28 },
     { desk: 'Credit Opportunities', allocation: 24, varContribution: 29 },

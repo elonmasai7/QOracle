@@ -1,13 +1,7 @@
 import { motion } from 'framer-motion'
-import { useMemo } from 'react'
-import {
-  CorrelationHeatmap,
-} from '../components/charts/CorrelationHeatmap'
-import { ExposureTreemap } from '../components/charts/ExposureTreemap'
-import { HistogramChart } from '../components/charts/HistogramChart'
-import { RiskTrendChart } from '../components/charts/RiskTrendChart'
-import { ScenarioComparisonChart } from '../components/charts/ScenarioComparisonChart'
-import { TailRiskChart } from '../components/charts/TailRiskChart'
+import { Component, Suspense, lazy, useMemo } from 'react'
+import type { ErrorInfo, ReactNode } from 'react'
+import { marketingNavItems, workspaceNavItems } from '../config/navigation'
 import { Sidebar } from '../components/layout/Sidebar'
 import { Topbar } from '../components/layout/Topbar'
 import { Badge } from '../components/ui/Badge'
@@ -17,6 +11,25 @@ import { usePlatformSnapshot } from '../hooks/usePlatformSnapshot'
 import { cn } from '../lib/cn'
 import { useAppStore } from '../store/app-store'
 import type { DashboardSnapshot, MetricCard, ScenarioCard } from '../types/platform'
+
+const CorrelationHeatmap = lazy(() =>
+  import('../components/charts/CorrelationHeatmap').then((module) => ({ default: module.CorrelationHeatmap })),
+)
+const ExposureTreemap = lazy(() =>
+  import('../components/charts/ExposureTreemap').then((module) => ({ default: module.ExposureTreemap })),
+)
+const HistogramChart = lazy(() =>
+  import('../components/charts/HistogramChart').then((module) => ({ default: module.HistogramChart })),
+)
+const RiskTrendChart = lazy(() =>
+  import('../components/charts/RiskTrendChart').then((module) => ({ default: module.RiskTrendChart })),
+)
+const ScenarioComparisonChart = lazy(() =>
+  import('../components/charts/ScenarioComparisonChart').then((module) => ({ default: module.ScenarioComparisonChart })),
+)
+const TailRiskChart = lazy(() =>
+  import('../components/charts/TailRiskChart').then((module) => ({ default: module.TailRiskChart })),
+)
 
 const fadeUp = {
   initial: { opacity: 0, y: 8 },
@@ -36,7 +49,38 @@ export function App() {
   )
 }
 
+class PlatformErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Platform rendering error', error, info)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="surface-panel p-8">
+          <p className="eyebrow">Platform Notice</p>
+          <h3 className="mt-3 text-xl font-semibold text-white">Dashboard widget recovery mode</h3>
+          <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300">
+            A visualization failed to render. Refresh the page or switch sections while the affected widget is reloaded.
+          </p>
+        </div>
+      )
+    }
+
+    return this.props.children
+  }
+}
+
 function Landing() {
+  const mobileMarketingNavOpen = useAppStore((state) => state.mobileMarketingNavOpen)
+  const setMobileMarketingNavOpen = useAppStore((state) => state.setMobileMarketingNavOpen)
+
   return (
     <div className="relative overflow-hidden border-b border-white/6 bg-mesh">
       <header className="sticky top-0 z-50 border-b border-white/8 bg-[#07111fcc] backdrop-blur-xl">
@@ -49,14 +93,25 @@ function Landing() {
             </div>
           </div>
           <nav className="hidden items-center gap-8 text-sm text-slate-300 xl:flex">
-            <a href="#platform">Platform</a>
-            <a href="#solutions">Solutions</a>
-            <a href="#technology">Technology</a>
-            <a href="#pricing">Pricing</a>
-            <a href="#resources">Resources</a>
-            <a href="#company">Company</a>
+            {marketingNavItems.map((item) => (
+              <a key={item.href} href={item.href}>
+                {item.label}
+              </a>
+            ))}
           </nav>
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileMarketingNavOpen(true)}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white xl:hidden"
+              aria-label="Open menu"
+            >
+              <span className="space-y-1">
+                <span className="block h-0.5 w-4 bg-current" />
+                <span className="block h-0.5 w-4 bg-current" />
+                <span className="block h-0.5 w-4 bg-current" />
+              </span>
+            </button>
             <Button variant="ghost" className="hidden sm:inline-flex">
               Login
             </Button>
@@ -64,6 +119,7 @@ function Landing() {
           </div>
         </div>
       </header>
+      <MarketingDrawer open={mobileMarketingNavOpen} onClose={() => setMobileMarketingNavOpen(false)} />
 
       <section className="mx-auto grid max-w-shell gap-12 px-6 py-20 lg:grid-cols-[1.05fr_0.95fr] lg:px-10 lg:py-28">
         <motion.div {...fadeUp} className="max-w-2xl">
@@ -201,6 +257,9 @@ function Landing() {
 }
 
 function PlatformSection({ snapshot, loading }: { snapshot: DashboardSnapshot; loading: boolean }) {
+  const mobileDrawerOpen = useAppStore((state) => state.mobileDrawerOpen)
+  const setMobileDrawerOpen = useAppStore((state) => state.setMobileDrawerOpen)
+
   return (
     <section id="platform" className="mx-auto max-w-shell px-4 py-12 sm:px-6 lg:px-8">
       <div className="mb-8">
@@ -213,17 +272,20 @@ function PlatformSection({ snapshot, loading }: { snapshot: DashboardSnapshot; l
 
       <div className="grid gap-6 lg:grid-cols-[auto_1fr]">
         <Sidebar />
+        <WorkspaceDrawer open={mobileDrawerOpen} onClose={() => setMobileDrawerOpen(false)} />
         <main className="min-w-0">
           <Topbar />
-          {loading ? (
-            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, index) => (
-                <div key={index} className="surface-panel h-48 animate-pulse bg-white/5" />
-              ))}
-            </div>
-          ) : (
-            <PlatformView snapshot={snapshot} />
-          )}
+          <PlatformErrorBoundary>
+            {loading ? (
+              <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <div key={index} className="surface-panel h-48 animate-pulse bg-white/5" />
+                ))}
+              </div>
+            ) : (
+              <PlatformView snapshot={snapshot} />
+            )}
+          </PlatformErrorBoundary>
         </main>
       </div>
     </section>
@@ -270,22 +332,34 @@ function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
 
       <div className="grid gap-6 xl:grid-cols-12">
         <Card className="xl:col-span-7" title="Risk Trend" subtitle="Composite risk score across recent monthly closes">
-          <RiskTrendChart data={snapshot.riskTrend} />
+          <ChartSkeleton>
+            <RiskTrendChart data={snapshot.riskTrend} />
+          </ChartSkeleton>
         </Card>
         <Card className="xl:col-span-5" title="Monte Carlo Histogram" subtitle="Portfolio outcome distribution across simulation paths">
-          <HistogramChart data={snapshot.histogram} />
+          <ChartSkeleton>
+            <HistogramChart data={snapshot.histogram} />
+          </ChartSkeleton>
         </Card>
         <Card className="xl:col-span-4" title="VaR / CVaR Tail Visualization" subtitle="Tail markers across the stress loss distribution">
-          <TailRiskChart data={snapshot.tailRisk} />
+          <ChartSkeleton>
+            <TailRiskChart data={snapshot.tailRisk} />
+          </ChartSkeleton>
         </Card>
         <Card className="xl:col-span-4" title="Correlation Heatmap" subtitle="Cross-asset dependency structure">
-          <CorrelationHeatmap data={snapshot.heatmap} />
+          <ChartSkeleton>
+            <CorrelationHeatmap data={snapshot.heatmap} />
+          </ChartSkeleton>
         </Card>
         <Card className="xl:col-span-4" title="Portfolio Exposure Treemap" subtitle="Allocation by strategy sleeve">
-          <ExposureTreemap data={snapshot.treemap} />
+          <ChartSkeleton>
+            <ExposureTreemap data={snapshot.treemap} />
+          </ChartSkeleton>
         </Card>
         <Card className="xl:col-span-7" title="Scenario Comparison" subtitle="Base vs stressed drawdown paths">
-          <ScenarioComparisonChart data={snapshot.scenarios} />
+          <ChartSkeleton>
+            <ScenarioComparisonChart data={snapshot.scenarios} />
+          </ChartSkeleton>
         </Card>
         <Card className="xl:col-span-5" title="AI Recommendations" subtitle="Actionable strategy suggestions with confidence and expected impact">
           <div className="space-y-3">
@@ -408,7 +482,9 @@ function StressTestingView({ snapshot }: { snapshot: DashboardSnapshot }) {
       </div>
       <div className="grid gap-6 xl:grid-cols-12">
         <Card className="xl:col-span-7" title="Scenario Comparison" subtitle="Base and stressed outcomes across standard scenarios">
-          <ScenarioComparisonChart data={snapshot.scenarios} />
+          <ChartSkeleton>
+            <ScenarioComparisonChart data={snapshot.scenarios} />
+          </ChartSkeleton>
         </Card>
         <Card className="xl:col-span-5" title="Custom Scenario Builder" subtitle="Shock inputs for rates, spreads, inflation, and liquidity">
           <div className="space-y-4">
@@ -438,7 +514,9 @@ function ForecastingView({ snapshot }: { snapshot: DashboardSnapshot }) {
   return (
     <div className="grid gap-6 xl:grid-cols-12">
       <Card className="xl:col-span-7" title="Forecast Volatility" subtitle="PyTorch and XGBoost feature stack for forward-looking signals">
-        <RiskTrendChart data={snapshot.riskTrend} />
+        <ChartSkeleton>
+          <RiskTrendChart data={snapshot.riskTrend} />
+        </ChartSkeleton>
       </Card>
       <Card className="xl:col-span-5" title="Driver Summary" subtitle="Model rationale and stability monitors">
         <div className="space-y-4">
@@ -484,7 +562,9 @@ function ReportsView({ snapshot }: { snapshot: DashboardSnapshot }) {
         </div>
       </Card>
       <Card className="xl:col-span-5" title="Distribution Snapshot" subtitle="Latest board-pack distribution profile">
-        <HistogramChart data={snapshot.histogram} />
+        <ChartSkeleton>
+          <HistogramChart data={snapshot.histogram} />
+        </ChartSkeleton>
       </Card>
     </div>
   )
@@ -508,6 +588,15 @@ function ComplianceView({ snapshot }: { snapshot: DashboardSnapshot }) {
       </Card>
       <Card className="xl:col-span-6" title="RBAC, API Keys, Compliance Center" subtitle="Security pages with enterprise controls">
         <div className="space-y-3">
+          {snapshot.rbacRoles?.map((role) => (
+            <div key={role.role} className="rounded-xl border border-white/8 bg-white/5 p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold capitalize text-white">{role.role}</p>
+                <Badge>{role.capabilities.length} permissions</Badge>
+              </div>
+              <p className="mt-2 text-sm text-slate-400">{role.capabilities.join(' • ')}</p>
+            </div>
+          ))}
           {snapshot.apiKeys.map((key) => (
             <div key={key.name} className="rounded-xl border border-white/8 bg-white/5 p-4">
               <div className="flex items-center justify-between">
@@ -518,6 +607,16 @@ function ComplianceView({ snapshot }: { snapshot: DashboardSnapshot }) {
               <p className="mt-1 text-xs text-slate-500">Last used {key.lastUsed}</p>
             </div>
           ))}
+          {snapshot.securityControls?.length ? (
+            <div className="rounded-xl border border-white/8 bg-white/5 p-4">
+              <p className="text-sm font-semibold text-white">Control Framework</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {snapshot.securityControls.map((control) => (
+                  <Badge key={control}>{control}</Badge>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <div className="grid gap-3 md:grid-cols-2">
             <Button>Generate API Key</Button>
             <Button variant="secondary">Compliance Center</Button>
@@ -635,6 +734,117 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl border border-white/8 bg-white/5 p-4">
       <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{label}</p>
       <p className="mt-2 text-xl font-semibold text-white">{value}</p>
+    </div>
+  )
+}
+
+function ChartSkeleton({ children }: { children: ReactNode }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-72 items-center justify-center rounded-xl border border-white/8 bg-white/5 text-sm text-slate-400">
+          Loading visualization...
+        </div>
+      }
+    >
+      {children}
+    </Suspense>
+  )
+}
+
+function MarketingDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <div className={cn('fixed inset-0 z-[60] xl:hidden', open ? 'pointer-events-auto' : 'pointer-events-none')}>
+      <div
+        className={cn('absolute inset-0 bg-black/55 transition-opacity duration-180', open ? 'opacity-100' : 'opacity-0')}
+        onClick={onClose}
+      />
+      <div
+        className={cn(
+          'absolute right-0 top-0 h-full w-[320px] max-w-[88vw] border-l border-white/10 bg-[#08121f] p-6 shadow-panel transition-transform duration-180',
+          open ? 'translate-x-0' : 'translate-x-full',
+        )}
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-white">QuantumRisk Oracle</p>
+            <p className="text-xs text-slate-400">Institutional Risk Intelligence</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-slate-300">
+            Close
+          </button>
+        </div>
+        <nav className="mt-8 space-y-2">
+          {marketingNavItems.map((item) => (
+            <a
+              key={item.href}
+              href={item.href}
+              onClick={onClose}
+              className="block rounded-xl border border-white/8 bg-white/5 px-4 py-3 text-sm text-slate-200"
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
+        <div className="mt-8 grid gap-3">
+          <Button>Request Demo</Button>
+          <Button variant="secondary">Login</Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function WorkspaceDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const activeView = useAppStore((state) => state.activeView)
+  const setActiveView = useAppStore((state) => state.setActiveView)
+
+  return (
+    <div className={cn('fixed inset-0 z-[55] lg:hidden', open ? 'pointer-events-auto' : 'pointer-events-none')}>
+      <div
+        className={cn('absolute inset-0 bg-black/55 transition-opacity duration-180', open ? 'opacity-100' : 'opacity-0')}
+        onClick={onClose}
+      />
+      <div
+        className={cn(
+          'absolute left-0 top-0 h-full w-[320px] max-w-[88vw] border-r border-white/10 bg-[#08121f] p-5 shadow-panel transition-transform duration-180',
+          open ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-white">Workspace</p>
+            <p className="text-xs text-slate-400">Treasury operations</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-slate-300">
+            Close
+          </button>
+        </div>
+        <div className="space-y-1.5">
+          {workspaceNavItems.map((item) => {
+            const active = item.key === activeView
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => {
+                  setActiveView(item.key)
+                  onClose()
+                }}
+                className={cn(
+                  'flex h-11 w-full items-center rounded-xl px-3 text-sm transition-all duration-150',
+                  active ? 'bg-blue-600/16 text-white shadow-[inset_0_0_0_1px_rgba(37,99,235,0.45)]' : 'text-slate-300 hover:bg-white/5 hover:text-white',
+                )}
+              >
+                <span className="inline-flex size-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[11px] font-semibold">
+                  {item.short}
+                </span>
+                <span className="ml-3">{item.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }

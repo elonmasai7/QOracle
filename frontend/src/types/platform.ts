@@ -66,4 +66,20 @@ export interface DashboardSnapshot {
   auditLog: { event: string; actor: string; timestamp: string; channel: string }[]
   apiKeys: { name: string; scope: string; lastUsed: string; status: string }[]
   exposures: PortfolioHolding[]
+  securityControls?: string[]
+  rbacRoles?: { role: string; capabilities: string[] }[]
+}
+
+export interface SecurityOverview {
+  rbac: { role: string; capabilities: string[] }[]
+  auditLog: DashboardSnapshot['auditLog']
+  apiKeys: DashboardSnapshot['apiKeys']
+  controls: string[]
+}
+
+export interface StressScenarioResponse {
+  name: string
+  type: string
+  severity: 'low' | 'medium' | 'high'
+  parameters: Record<string, number>
 }
