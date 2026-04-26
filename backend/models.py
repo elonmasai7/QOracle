@@ -65,6 +65,19 @@ class RiskResult(BaseModel):
     volatility_forecast = db.Column(db.Float, nullable=False)
     composite_risk_score = db.Column(db.Float, nullable=False)
     mode = db.Column(db.String(30), nullable=False, default="classical")
+    confidence_interval = db.Column(db.Float, nullable=False, default=0.99)
+    simulation_paths = db.Column(db.Integer, nullable=False, default=10000)
+    recommendations = db.Column(db.JSON, nullable=False, default=list)
+
+
+class AnalysisRun(BaseModel):
+    __tablename__ = "analysisruns"
+    portfolio_id = db.Column(UUID(as_uuid=True), db.ForeignKey("portfolios.id"), nullable=False)
+    status = db.Column(db.String(30), nullable=False, default="queued")
+    engine = db.Column(db.String(30), nullable=False, default="hybrid")
+    configuration = db.Column(db.JSON, nullable=False, default=dict)
+    runtime_ms = db.Column(db.Integer, nullable=True)
+    summary = db.Column(db.JSON, nullable=False, default=dict)
 
 
 class StressResult(BaseModel):
@@ -73,6 +86,14 @@ class StressResult(BaseModel):
     scenario = db.Column(db.String(100), nullable=False)
     pnl_impact = db.Column(db.Float, nullable=False)
     details = db.Column(db.JSON, nullable=False)
+
+
+class ScenarioTemplate(BaseModel):
+    __tablename__ = "scenariotemplates"
+    name = db.Column(db.String(120), nullable=False)
+    category = db.Column(db.String(50), nullable=False, default="market")
+    severity = db.Column(db.String(20), nullable=False, default="medium")
+    parameters = db.Column(db.JSON, nullable=False, default=dict)
 
 
 class ModelMetric(BaseModel):

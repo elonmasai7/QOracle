@@ -7,7 +7,9 @@
     "strict": true,
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "noEmit": true,
+    "types": ["vite/client"]
   },
   "include": ["src"]
 }

@@ -6,6 +6,7 @@ from ..auth import auth_required, get_auth_context, role_required
 from ..extensions import db
 from ..models import Portfolio, Asset
 from ..services.audit import write_audit_log
+from ..services.platform_data import validate_portfolio_payload
 
 
 portfolio_bp = Blueprint("portfolio", __name__, url_prefix="/api/v1/portfolios")
@@ -72,3 +73,13 @@ def list_portfolios():
             for r in rows
         ]
     )
+
+
+@portfolio_bp.post("/validate")
+@auth_required
+@role_required("admin", "analyst")
+def validate_portfolio():
+    payload = request.get_json(force=True)
+    rows = payload.get("rows", [])
+    result = validate_portfolio_payload(rows)
+    return jsonify(result), (200 if result["valid"] else 422)

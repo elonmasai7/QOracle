@@ -1,0 +1,5 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+export function RiskTrendChart({ data }) {
+    return (_jsx("div", { className: "h-72", children: _jsx(ResponsiveContainer, { width: "100%", height: "100%", children: _jsxs(AreaChart, { data: data, children: [_jsx("defs", { children: _jsxs("linearGradient", { id: "riskFill", x1: "0", x2: "0", y1: "0", y2: "1", children: [_jsx("stop", { offset: "5%", stopColor: "#2563EB", stopOpacity: 0.35 }), _jsx("stop", { offset: "95%", stopColor: "#2563EB", stopOpacity: 0.02 })] }) }), _jsx(CartesianGrid, { stroke: "rgba(255,255,255,.08)", vertical: false }), _jsx(XAxis, { dataKey: "label", stroke: "#64748B", tickLine: false, axisLine: false }), _jsx(YAxis, { stroke: "#64748B", tickLine: false, axisLine: false }), _jsx(Tooltip, { contentStyle: { background: '#0F1B2E', border: '1px solid rgba(255,255,255,.08)', borderRadius: 12 }, labelStyle: { color: '#F8FAFC' } }), _jsx(Area, { type: "monotone", dataKey: "risk", stroke: "#2563EB", strokeWidth: 2, fill: "url(#riskFill)" })] }) }) }));
+}

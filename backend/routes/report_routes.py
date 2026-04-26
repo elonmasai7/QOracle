@@ -7,6 +7,7 @@ from ..auth import auth_required, get_auth_context
 from ..models import RiskResult, Portfolio
 from ..services.compliance import build_compliance_report
 from ..services.pdf_report import generate_compliance_pdf
+from ..services.platform_data import build_dashboard_snapshot
 
 
 report_bp = Blueprint("report", __name__, url_prefix="/api/v1/reports")
@@ -64,3 +65,11 @@ def compliance_report(portfolio_id):
         )
 
     return Response(json.dumps(report, indent=2), mimetype="application/json")
+
+
+@report_bp.get("/library")
+@auth_required
+def report_library():
+    ctx = get_auth_context()
+    snapshot = build_dashboard_snapshot(ctx.get("tenant_id"))
+    return jsonify(snapshot["reports"])

@@ -1,6 +1,7 @@
 import uuid
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token
+from ..auth import auth_required, get_auth_context
 from ..extensions import db
 from ..models import User, Tenant
 from ..services.security import hash_password, verify_password
@@ -48,3 +49,23 @@ def login():
         additional_claims={"tenant_id": str(user.tenant_id), "role": user.role},
     )
     return jsonify({"access_token": token, "tenant_id": str(user.tenant_id), "role": user.role})
+
+
+@auth_bp.get("/me")
+@auth_required
+def me():
+    ctx = get_auth_context()
+    user = User.query.filter_by(id=ctx["user_id"]).first()
+    if not user:
+        return jsonify({"error": "user_not_found"}), 404
+    tenant = Tenant.query.filter_by(id=user.tenant_id).first()
+    return jsonify(
+        {
+            "user_id": str(user.id),
+            "tenant_id": str(user.tenant_id),
+            "email": user.email,
+            "role": user.role,
+            "tenant_name": tenant.name if tenant else None,
+            "plan": tenant.plan if tenant else None,
+        }
+    )

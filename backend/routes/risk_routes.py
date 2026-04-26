@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from ..auth import auth_required, get_auth_context, role_required
 from ..extensions import limiter
 from ..tasks import run_risk_job
+from ..services.platform_data import stress_scenario_catalog
 
 
 risk_bp = Blueprint("risk", __name__, url_prefix="/api/v1/risk")
@@ -40,3 +41,8 @@ def risk_task_status(task_id):
     if result.failed():
         return jsonify({"status": "failed", "error": str(result.result)}), 500
     return jsonify({"status": result.status})
+
+
+@risk_bp.get("/scenarios")
+def list_scenarios():
+    return jsonify(stress_scenario_catalog())

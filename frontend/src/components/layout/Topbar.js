@@ -1,0 +1,5 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { Button } from '../ui/Button';
+export function Topbar() {
+    return (_jsxs("div", { className: "surface-panel mb-6 flex flex-col gap-4 px-5 py-4 xl:flex-row xl:items-center xl:justify-between", children: [_jsx("div", { className: "flex flex-1 items-center gap-3", children: _jsx("div", { className: "flex h-11 flex-1 items-center rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-slate-400", children: "Search portfolios, reports, audit trails..." }) }), _jsxs("div", { className: "flex flex-wrap items-center gap-3", children: [_jsx("div", { className: "rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-slate-300", children: "Global Treasury Group" }), _jsx("div", { className: "rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-slate-300", children: "3 alerts" }), _jsx("div", { className: "rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-slate-300", children: "Amina Mensah" }), _jsx(Button, { variant: "secondary", className: "h-11 px-4", children: "Export Report" })] })] }));
+}

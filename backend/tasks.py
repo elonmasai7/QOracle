@@ -5,7 +5,7 @@ from celery import Celery
 from flask import Flask
 from .config import Config
 from .extensions import db
-from .models import Asset, RiskResult, StressResult, BillingRecord
+from .models import AnalysisRun, Asset, RiskResult, StressResult, BillingRecord
 from .services.risk_engine import (
     cholesky_correlated_paths,
     jump_diffusion_paths,
@@ -14,7 +14,8 @@ from .services.risk_engine import (
     composite_score,
     hedge_recommendations,
 )
-from .quantum.hybrid_runner import run_hybrid_benchmark
+from .ml.pipeline import run_hybrid_ml_pipeline
+from .quantum.hybrid_workflow import run_quantum_tail_workflow
 from .services.audit import write_audit_log
 from .services.webhook_dispatch import dispatch_event
 
@@ -72,13 +73,34 @@ def run_risk_job(self, tenant_id, portfolio_id, mode="hybrid", paths=10000, hori
     metrics = compute_risk_metrics(weights, prices, returns)
     stress_returns = macro_stress_test(returns)
     stress_metrics = compute_risk_metrics(weights, prices, stress_returns)
+    ml_forecast = run_hybrid_ml_pipeline(returns)
+    metrics["volatility_forecast"] = ml_forecast.forecast_volatility
+    metrics["liquidity_risk"] = ml_forecast.liquidity_stress
 
     losses = -(returns @ (weights * prices))
     threshold = metrics["var_99"]
-    quantum = run_hybrid_benchmark(losses, threshold) if mode in {"hybrid", "quantum"} else None
+    quantum = run_quantum_tail_workflow(losses, threshold, enabled=mode in {"hybrid", "quantum"})
 
     risk_score = composite_score(metrics)
     recs = hedge_recommendations(metrics)
+
+    analysis_run = AnalysisRun(
+        tenant_id=uuid.UUID(tenant_id),
+        portfolio_id=uuid.UUID(portfolio_id),
+        status="completed",
+        engine=mode,
+        configuration={
+            "paths": paths,
+            "horizon_days": horizon_days,
+            "confidence_interval": 0.99,
+        },
+        runtime_ms=0,
+        summary={
+            "composite_risk_score": risk_score,
+            "hedge_recommendations": recs,
+        },
+    )
+    db.session.add(analysis_run)
 
     saved = RiskResult(
         tenant_id=uuid.UUID(tenant_id),
@@ -92,6 +114,9 @@ def run_risk_job(self, tenant_id, portfolio_id, mode="hybrid", paths=10000, hori
         volatility_forecast=metrics["volatility_forecast"],
         composite_risk_score=risk_score,
         mode="hybrid" if quantum and quantum["benchmark"]["quantum_mode_active"] else "classical",
+        confidence_interval=0.99,
+        simulation_paths=paths,
+        recommendations=recs,
     )
     db.session.add(saved)
 
@@ -126,6 +151,8 @@ def run_risk_job(self, tenant_id, portfolio_id, mode="hybrid", paths=10000, hori
     write_audit_log(tenant_id, "risk_run", "risk", {"portfolio_id": portfolio_id, "mode": mode})
 
     runtime_ms = int((time.time() - started) * 1000)
+    analysis_run.runtime_ms = runtime_ms
+    db.session.commit()
     dispatch_event(
         uuid.UUID(tenant_id),
         "risk.completed",
@@ -135,6 +162,10 @@ def run_risk_job(self, tenant_id, portfolio_id, mode="hybrid", paths=10000, hori
             "metrics": metrics,
             "stress_metrics": stress_metrics,
             "composite_risk_score": risk_score,
+            "forecast": {
+                "volatility": ml_forecast.forecast_volatility,
+                "liquidity_stress": ml_forecast.liquidity_stress,
+            },
             "runtime_ms": runtime_ms,
         },
     )
@@ -145,5 +176,10 @@ def run_risk_job(self, tenant_id, portfolio_id, mode="hybrid", paths=10000, hori
         "composite_risk_score": risk_score,
         "hedge_recommendations": recs,
         "quantum": quantum,
+        "forecast": {
+            "volatility": ml_forecast.forecast_volatility,
+            "liquidity_stress": ml_forecast.liquidity_stress,
+            "factors": ml_forecast.factor_contributions,
+        },
         "runtime_ms": runtime_ms,
     }

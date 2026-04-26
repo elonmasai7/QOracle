@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantumrisk-frontend
+  labels:
+    app: quantumrisk-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: quantumrisk-frontend
+  template:
+    metadata:
+      labels:
+        app: quantumrisk-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/your-org/quantumrisk-frontend:latest
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quantumrisk-frontend-svc
+spec:
+  selector:
+    app: quantumrisk-frontend
+  ports:
+    - port: 80
+      targetPort: 80

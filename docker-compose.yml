@@ -10,11 +10,21 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
     ports:
       - '6379:6379'
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
     build:
@@ -24,8 +34,15 @@ services:
     ports:
       - '8000:8000'
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
   worker:
     build:
@@ -33,9 +50,12 @@ services:
       dockerfile: worker/Dockerfile
     env_file: .env
     depends_on:
-      - backend
-      - redis
-      - postgres
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   frontend:
     build:
@@ -44,7 +64,8 @@ services:
     ports:
       - '3000:80'
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   pg_data:

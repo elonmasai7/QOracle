@@ -1,60 +1,64 @@
-:root {
-  --bg: #f2f7f4;
-  --text: #0f1f1c;
-  --panel: #ffffff;
-  --brand: #146b5b;
-  --accent: #eac45b;
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    background:
+      radial-gradient(circle at top, rgba(37, 99, 235, 0.12), transparent 20%),
+      linear-gradient(180deg, #07111f 0%, #091423 100%);
+    color: #f8fafc;
+    font-family: Inter, 'IBM Plex Sans', system-ui, sans-serif;
+    text-rendering: optimizeLegibility;
+  }
+
+  button,
+  input,
+  select {
+    font: inherit;
+  }
 }
 
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
-  background: radial-gradient(circle at 20% 0%, #deefe8, var(--bg));
-  color: var(--text);
+@layer components {
+  .surface-panel {
+    @apply rounded-xl border border-qr-line bg-qr-surface shadow-panel;
+  }
+
+  .surface-panel-alt {
+    @apply rounded-xl border border-qr-line bg-qr-elevated shadow-panel;
+  }
+
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400;
+  }
+
+  .section-title {
+    @apply text-3xl font-semibold tracking-tight text-qr-text md:text-4xl;
+  }
+
+  .section-copy {
+    @apply max-w-3xl text-base leading-7 text-slate-300;
+  }
 }
 
-.app-shell {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 1rem;
+@layer utilities {
+  .mask-fade-bottom {
+    mask-image: linear-gradient(to bottom, black 85%, transparent);
+  }
 }
-
-header h1 { margin-bottom: 0.25rem; }
-header p { margin-top: 0; color: #385b55; }
-
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 0.75rem;
-}
-
-.kpi-card, .panel {
-  background: var(--panel);
-  border: 1px solid #d9e7df;
-  border-radius: 12px;
-  padding: 0.9rem;
-}
-
-.kpi-card h3 { margin: 0.2rem 0 0; }
-.kpi-card p { margin: 0; color: #516f69; }
-
-.grid-2 {
-  margin-top: 0.9rem;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 0.75rem;
-}
-
-label { display: block; margin-top: 0.5rem; font-size: 0.9rem; }
-input[type='range'] { width: 100%; }
-.button-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-button {
-  border: none;
-  background: var(--brand);
-  color: white;
-  border-radius: 8px;
-  padding: 0.5rem 0.8rem;
-}
-
-.muted { color: #4f6d66; }
