@@ -14,9 +14,23 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   role VARCHAR(50) NOT NULL DEFAULT 'analyst',
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS memberships (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+  user_id UUID NOT NULL REFERENCES users(id),
+  role VARCHAR(50) NOT NULL DEFAULT 'analyst',
+  status VARCHAR(30) NOT NULL DEFAULT 'active',
+  is_default BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memberships_tenant_user ON memberships(tenant_id, user_id);
 
 CREATE TABLE IF NOT EXISTS portfolios (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -56,6 +70,20 @@ CREATE TABLE IF NOT EXISTS riskresults (
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS analysisruns (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+  portfolio_id UUID NOT NULL REFERENCES portfolios(id),
+  task_id VARCHAR(128) NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'queued',
+  engine VARCHAR(30) NOT NULL DEFAULT 'hybrid',
+  configuration JSONB NOT NULL DEFAULT '{}'::jsonb,
+  runtime_ms INTEGER NULL,
+  summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS stressresults (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   tenant_id UUID NOT NULL REFERENCES tenants(id),
@@ -63,6 +91,17 @@ CREATE TABLE IF NOT EXISTS stressresults (
   scenario VARCHAR(100) NOT NULL,
   pnl_impact DOUBLE PRECISION NOT NULL,
   details JSONB NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS scenariotemplates (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+  name VARCHAR(120) NOT NULL,
+  category VARCHAR(50) NOT NULL DEFAULT 'market',
+  severity VARCHAR(20) NOT NULL DEFAULT 'medium',
+  parameters JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );

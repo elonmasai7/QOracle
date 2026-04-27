@@ -48,12 +48,27 @@ create_celery_app()
 
 
 @celery.task(bind=True, name="risk.run")
-def run_risk_job(self, tenant_id, portfolio_id, mode="hybrid", paths=10000, horizon_days=1):
+def run_risk_job(self, tenant_id, portfolio_id, analysis_run_id=None, mode="hybrid", paths=10000, horizon_days=1):
     started = time.time()
+    tenant_uuid = uuid.UUID(tenant_id)
+    portfolio_uuid = uuid.UUID(portfolio_id)
+    analysis_run = (
+        AnalysisRun.query.filter_by(id=uuid.UUID(str(analysis_run_id)), tenant_id=tenant_uuid).first()
+        if analysis_run_id
+        else None
+    )
+    if analysis_run:
+        analysis_run.status = "running"
+        db.session.commit()
+
     assets = Asset.query.filter_by(
-        tenant_id=uuid.UUID(tenant_id), portfolio_id=uuid.UUID(portfolio_id)
+        tenant_id=tenant_uuid, portfolio_id=portfolio_uuid
     ).all()
     if not assets:
+        if analysis_run:
+            analysis_run.status = "failed"
+            analysis_run.summary = {"error": "No assets found"}
+            db.session.commit()
         raise ValueError("No assets found")
 
     prices = np.array([a.price for a in assets])
@@ -84,27 +99,26 @@ def run_risk_job(self, tenant_id, portfolio_id, mode="hybrid", paths=10000, hori
     risk_score = composite_score(metrics)
     recs = hedge_recommendations(metrics)
 
-    analysis_run = AnalysisRun(
-        tenant_id=uuid.UUID(tenant_id),
-        portfolio_id=uuid.UUID(portfolio_id),
-        status="completed",
-        engine=mode,
-        configuration={
-            "paths": paths,
-            "horizon_days": horizon_days,
-            "confidence_interval": 0.99,
-        },
-        runtime_ms=0,
-        summary={
-            "composite_risk_score": risk_score,
-            "hedge_recommendations": recs,
-        },
-    )
-    db.session.add(analysis_run)
+    if analysis_run is None:
+        analysis_run = AnalysisRun(
+            tenant_id=tenant_uuid,
+            portfolio_id=portfolio_uuid,
+            task_id=self.request.id,
+            status="completed",
+            engine=mode,
+            configuration={
+                "paths": paths,
+                "horizon_days": horizon_days,
+                "confidence_interval": 0.99,
+            },
+            runtime_ms=0,
+            summary={},
+        )
+        db.session.add(analysis_run)
 
     saved = RiskResult(
-        tenant_id=uuid.UUID(tenant_id),
-        portfolio_id=uuid.UUID(portfolio_id),
+        tenant_id=tenant_uuid,
+        portfolio_id=portfolio_uuid,
         var_95=metrics["var_95"],
         var_99=metrics["var_99"],
         cvar_95=metrics["cvar_95"],
@@ -139,7 +153,7 @@ def run_risk_job(self, tenant_id, portfolio_id, mode="hybrid", paths=10000, hori
         if units > 0:
             db.session.add(
                 BillingRecord(
-                    tenant_id=uuid.UUID(tenant_id),
+                    tenant_id=tenant_uuid,
                     usage_type="quantum_run",
                     units=units,
                     unit_price=5.0,
@@ -151,7 +165,13 @@ def run_risk_job(self, tenant_id, portfolio_id, mode="hybrid", paths=10000, hori
     write_audit_log(tenant_id, "risk_run", "risk", {"portfolio_id": portfolio_id, "mode": mode})
 
     runtime_ms = int((time.time() - started) * 1000)
+    analysis_run.status = "completed"
     analysis_run.runtime_ms = runtime_ms
+    analysis_run.summary = {
+        "composite_risk_score": risk_score,
+        "hedge_recommendations": recs,
+        "result_id": str(saved.id),
+    }
     db.session.commit()
     dispatch_event(
         uuid.UUID(tenant_id),

@@ -58,6 +58,35 @@ curl http://localhost:8000/openapi.json
 4. Frontend:
 - `http://localhost:3000`
 
+## Local Development Without Docker
+1. Install frontend dependencies:
+```bash
+cd frontend
+npm install
+```
+2. Install the minimal backend runtime into the local virtualenv:
+```bash
+./.venv/bin/pip install Flask Flask-JWT-Extended Flask-SQLAlchemy Flask-Limiter prometheus-flask-exporter python-dotenv SQLAlchemy Werkzeug python-json-logger requests
+```
+3. Seed demo users against a local SQLite database:
+```bash
+DATABASE_URL=sqlite:////tmp/quantumrisk-local.db ./.venv/bin/python -m backend.seed_demo
+```
+4. Run the backend:
+```bash
+DATABASE_URL=sqlite:////tmp/quantumrisk-local.db CELERY_BROKER_URL=redis://localhost:6379/0 CELERY_RESULT_BACKEND=redis://localhost:6379/1 ./.venv/bin/python -m backend.app
+```
+5. Run the frontend in a second terminal:
+```bash
+cd frontend
+VITE_API_BASE_URL=http://localhost:8000 npm run dev
+```
+
+Demo logins:
+- `admin@helios-oracle.com` / `QuantumRisk!2026`
+- `analyst@helios-oracle.com` / `QuantumRisk!2026`
+- `auditor@northbridge-capital.com` / `QuantumRisk!2026`
+
 ## API Example Flow
 1. Register tenant/user:
 ```bash

@@ -1,6 +1,5 @@
 from flask import Blueprint, current_app, jsonify, request
 from ..auth import auth_required, role_required
-from ..services.explainability import explain_credit, explain_credit_batch
 
 
 explain_bp = Blueprint("explain", __name__, url_prefix="/api/v1/explain")
@@ -10,6 +9,8 @@ explain_bp = Blueprint("explain", __name__, url_prefix="/api/v1/explain")
 @auth_required
 @role_required("admin", "analyst", "viewer")
 def explain_credit_endpoint():
+    from ..services.explainability import explain_credit
+
     payload = request.get_json(force=True)
     use_shap = bool(payload.get("use_shap", False))
 
@@ -36,6 +37,8 @@ def explain_credit_endpoint():
 @auth_required
 @role_required("admin", "analyst", "viewer")
 def explain_credit_batch_endpoint():
+    from ..services.explainability import explain_credit_batch
+
     payload = request.get_json(force=True)
     batch = payload.get("batch_features")
     if not isinstance(batch, list) or not batch:

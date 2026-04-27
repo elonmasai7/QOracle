@@ -11,8 +11,8 @@ export function ScenarioComparisonChart({ data }: { data: DashboardSnapshot['sce
           <YAxis stroke="#64748B" tickLine={false} axisLine={false} />
           <Tooltip contentStyle={{ background: '#0F1B2E', border: '1px solid rgba(255,255,255,.08)', borderRadius: 12 }} />
           <Legend />
-          <Bar dataKey="base" fill="#2563EB" radius={[6, 6, 0, 0]} />
-          <Bar dataKey="stressed" fill="#DC2626" radius={[6, 6, 0, 0]} />
+          <Bar dataKey="base" fill="#2563EB" radius={[6, 6, 0, 0]} isAnimationActive={false} />
+          <Bar dataKey="stressed" fill="#DC2626" radius={[6, 6, 0, 0]} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>
     </div>

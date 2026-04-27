@@ -4,9 +4,9 @@ import json
 import uuid
 from flask import Blueprint, jsonify, request, Response
 from ..auth import auth_required, get_auth_context
-from ..models import RiskResult, Portfolio
+from ..extensions import db
+from ..models import Report, RiskResult, Portfolio
 from ..services.compliance import build_compliance_report
-from ..services.pdf_report import generate_compliance_pdf
 from ..services.platform_data import build_dashboard_snapshot
 
 
@@ -45,6 +45,17 @@ def compliance_report(portfolio_id):
 
     report = build_compliance_report("tenant", pf.name, payload)
     fmt = request.args.get("format", "json")
+    report_location = f"/api/v1/reports/compliance/{portfolio_id}?format={fmt}"
+
+    report_row = Report(
+        tenant_id=uuid.UUID(tenant_id),
+        portfolio_id=uuid.UUID(portfolio_id),
+        format=fmt,
+        location=report_location,
+        report_type="compliance",
+    )
+    db.session.add(report_row)
+    db.session.commit()
 
     if fmt == "csv":
         output = io.StringIO()
@@ -55,6 +66,8 @@ def compliance_report(portfolio_id):
         return Response(output.getvalue(), mimetype="text/csv")
 
     if fmt == "pdf":
+        from ..services.pdf_report import generate_compliance_pdf
+
         pdf_data = generate_compliance_pdf(report)
         return Response(
             pdf_data,
@@ -72,6 +85,27 @@ def report_library():
     try:
         ctx = get_auth_context()
         snapshot = build_dashboard_snapshot(ctx.get("tenant_id"))
+        tenant_id = ctx.get("tenant_id")
+        if tenant_id:
+            report_rows = (
+                Report.query.filter_by(tenant_id=uuid.UUID(str(tenant_id)))
+                .order_by(Report.created_at.desc())
+                .limit(10)
+                .all()
+            )
+            if report_rows:
+                return jsonify(
+                    [
+                        {
+                            "title": f"{row.report_type.title()} report",
+                            "updatedAt": row.created_at.isoformat(),
+                            "format": row.format.upper(),
+                            "owner": "System",
+                            "location": row.location,
+                        }
+                        for row in report_rows
+                    ]
+                )
     except Exception:
         snapshot = build_dashboard_snapshot(None)
     return jsonify(snapshot["reports"])

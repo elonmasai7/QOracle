@@ -19,7 +19,7 @@ export function RiskTrendChart({ data }: { data: DashboardSnapshot['riskTrend'] 
             contentStyle={{ background: '#0F1B2E', border: '1px solid rgba(255,255,255,.08)', borderRadius: 12 }}
             labelStyle={{ color: '#F8FAFC' }}
           />
-          <Area type="monotone" dataKey="risk" stroke="#2563EB" strokeWidth={2} fill="url(#riskFill)" />
+          <Area type="monotone" dataKey="risk" stroke="#2563EB" strokeWidth={2} fill="url(#riskFill)" isAnimationActive={false} />
         </AreaChart>
       </ResponsiveContainer>
     </div>

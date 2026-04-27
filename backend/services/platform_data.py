@@ -346,7 +346,7 @@ def stress_scenario_catalog() -> list[dict[str, Any]]:
                 }
                 for row in rows
             ]
-    except SQLAlchemyError:
+    except (RuntimeError, SQLAlchemyError):
         return catalog
 
     return catalog

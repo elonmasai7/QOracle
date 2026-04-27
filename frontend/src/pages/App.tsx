@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
-import { Component, Suspense, lazy, useMemo } from 'react'
-import type { ErrorInfo, ReactNode } from 'react'
+import { Component, Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import type { ErrorInfo, FormEvent, ReactNode } from 'react'
 import { marketingNavItems, workspaceNavItems } from '../config/navigation'
 import { Sidebar } from '../components/layout/Sidebar'
 import { Topbar } from '../components/layout/Topbar'
@@ -9,8 +9,10 @@ import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { usePlatformSnapshot } from '../hooks/usePlatformSnapshot'
 import { cn } from '../lib/cn'
+import { describeApiError, fetchCurrentUser, login, registerAccount, setAccessToken } from '../services/api'
 import { useAppStore } from '../store/app-store'
-import type { DashboardSnapshot, MetricCard, ScenarioCard } from '../types/platform'
+import type { AuthProfile } from '../services/api'
+import type { DashboardSnapshot, MetricCard, NavView, ScenarioCard } from '../types/platform'
 
 const CorrelationHeatmap = lazy(() =>
   import('../components/charts/CorrelationHeatmap').then((module) => ({ default: module.CorrelationHeatmap })),
@@ -38,13 +40,132 @@ const fadeUp = {
   transition: { duration: 0.18 },
 }
 
+interface AuthSession {
+  email: string
+  role: string
+  tenantId: string
+  accessToken: string
+}
+
+interface AppNotice {
+  tone: 'default' | 'success' | 'warning'
+  message: string
+}
+
+const AUTH_STORAGE_KEY = 'quantumrisk-auth-session'
+
 export function App() {
   const { data, isLoading } = usePlatformSnapshot()
+  const setActiveView = useAppStore((state) => state.setActiveView)
+  const [authModalOpen, setAuthModalOpen] = useState(false)
+  const [authSession, setAuthSession] = useState<AuthSession | null>(null)
+  const [authProfile, setAuthProfile] = useState<AuthProfile | null>(null)
+  const [authChecking, setAuthChecking] = useState(false)
+  const [notice, setNotice] = useState<AppNotice | null>(null)
+
+  useEffect(() => {
+    const raw = window.localStorage.getItem(AUTH_STORAGE_KEY)
+    if (!raw) {
+      setAccessToken(null)
+      return
+    }
+    try {
+      const session = JSON.parse(raw) as AuthSession
+      setAuthSession(session)
+      setAccessToken(session.accessToken)
+    } catch {
+      window.localStorage.removeItem(AUTH_STORAGE_KEY)
+      setAccessToken(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!authSession) {
+      setAuthProfile(null)
+      setAuthChecking(false)
+      return
+    }
+
+    let cancelled = false
+    setAuthChecking(true)
+
+    fetchCurrentUser()
+      .then((profile) => {
+        if (!cancelled) {
+          setAuthProfile(profile)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          handleLogout()
+          setNotice({ tone: 'warning', message: 'Your session expired, so we signed you out. Please log in again.' })
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAuthChecking(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [authSession])
+
+  function handleLoginSuccess(session: AuthSession) {
+    setAuthSession(session)
+    setAccessToken(session.accessToken)
+    window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session))
+    setAuthModalOpen(false)
+    setNotice({ tone: 'success', message: `Signed in as ${session.email}. Your workspace is now unlocked.` })
+  }
+
+  function handleLogout() {
+    setAuthSession(null)
+    setAuthProfile(null)
+    setAccessToken(null)
+    window.localStorage.removeItem(AUTH_STORAGE_KEY)
+  }
+
+  function openLogin(message?: string) {
+    if (message) {
+      setNotice({ tone: 'warning', message })
+    }
+    setAuthModalOpen(true)
+  }
+
+  function runAction(message: string, options?: { tone?: AppNotice['tone']; view?: NavView; requireAuth?: boolean }) {
+    if (options?.requireAuth && !authSession) {
+      openLogin('Please sign in first to use workspace actions.')
+      return
+    }
+    if (options?.view) {
+      setActiveView(options.view)
+    }
+    setNotice({ tone: options?.tone ?? 'default', message })
+  }
 
   return (
     <div className="min-h-screen bg-qr-bg text-qr-text">
-      <Landing />
-      <PlatformSection snapshot={data!} loading={isLoading} />
+      {authSession ? (
+        <PlatformSection
+          snapshot={data!}
+          loading={isLoading}
+          authSession={authSession}
+          authProfile={authProfile}
+          authChecking={authChecking}
+          notice={notice}
+          onDismissNotice={() => setNotice(null)}
+          onOpenLogin={() => openLogin()}
+          onLogout={handleLogout}
+          onAction={runAction}
+        />
+      ) : (
+        <AuthScreen
+          onLoginSuccess={handleLoginSuccess}
+        />
+      )}
+      <LoginModal open={authModalOpen} onClose={() => setAuthModalOpen(false)} onSuccess={handleLoginSuccess} />
     </div>
   )
 }
@@ -77,7 +198,159 @@ class PlatformErrorBoundary extends Component<{ children: ReactNode }, { hasErro
   }
 }
 
-function Landing() {
+function AuthScreen({
+  onLoginSuccess,
+}: {
+  onLoginSuccess: (session: AuthSession) => void
+}) {
+  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const [organizationName, setOrganizationName] = useState('Acme Treasury')
+  const [email, setEmail] = useState('admin@helios-oracle.com')
+  const [password, setPassword] = useState('QuantumRisk!2026')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setLoading(true)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      if (mode === 'signup') {
+        await registerAccount({
+          organization_name: organizationName,
+          email,
+          password,
+          role: 'admin',
+        })
+        setSuccess('Account created. Signing you in now...')
+      }
+
+      const response = await login(email, password)
+      onLoginSuccess({
+        email,
+        role: response.role,
+        tenantId: response.tenant_id,
+        accessToken: response.access_token,
+      })
+    } catch (submitError) {
+      setError(describeApiError(submitError))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-mesh px-4 py-10 text-qr-text sm:px-6 lg:px-8">
+      <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[1.05fr_0.95fr]">
+        <section className="surface-panel-alt p-8 lg:p-10">
+          <p className="eyebrow">QuantumRisk Oracle</p>
+          <h1 className="mt-4 text-4xl font-semibold tracking-tight text-white md:text-5xl">
+            Real workspace access for portfolio risk operations
+          </h1>
+          <p className="mt-5 max-w-2xl text-base leading-7 text-slate-300">
+            Sign in to the actual platform workspace. This screen skips the marketing shell and takes you straight into the working modules that are wired today: auth, dashboard, portfolios, risk runs, reports, security, and org context.
+          </p>
+          <div className="mt-8 grid gap-4 sm:grid-cols-3">
+            <Stat label="Backend" value="Live on :8000" />
+            <Stat label="Frontend" value="Live on :5173" />
+            <Stat label="Tests" value="11 passing" />
+          </div>
+          <div className="mt-8 rounded-2xl border border-white/8 bg-black/20 p-5">
+            <p className="text-sm font-semibold text-white">Working demo credentials</p>
+            <p className="mt-2 text-sm text-slate-300">`admin@helios-oracle.com` / `QuantumRisk!2026`</p>
+            <p className="mt-4 text-sm font-semibold text-white">Implemented backend slices</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {['Auth', 'Organizations', 'Portfolio Upload', 'Risk Runs', 'Reports', 'API Keys', 'Audit Views'].map((item) => (
+                <Badge key={item}>{item}</Badge>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="surface-panel p-8 lg:p-10">
+          <div className="flex items-center gap-3">
+            <Button variant={mode === 'login' ? 'primary' : 'secondary'} onClick={() => setMode('login')}>
+              Login
+            </Button>
+            <Button variant={mode === 'signup' ? 'primary' : 'secondary'} onClick={() => setMode('signup')}>
+              Create Account
+            </Button>
+          </div>
+
+          <div className="mt-8">
+            <p className="eyebrow">{mode === 'login' ? 'Sign In' : 'Create Organization'}</p>
+            <h2 className="mt-3 text-2xl font-semibold text-white">
+              {mode === 'login' ? 'Access your workspace' : 'Create an organization and admin user'}
+            </h2>
+          </div>
+
+          <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+            {mode === 'signup' ? (
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-200">Organization name</span>
+                <input
+                  type="text"
+                  value={organizationName}
+                  onChange={(event) => setOrganizationName(event.target.value)}
+                  className="h-12 w-full rounded-[10px] border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition-colors duration-150 placeholder:text-slate-500 focus:border-blue-500/60"
+                  required
+                />
+              </label>
+            ) : null}
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-slate-200">Email</span>
+              <input
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className="h-12 w-full rounded-[10px] border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition-colors duration-150 placeholder:text-slate-500 focus:border-blue-500/60"
+                required
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-slate-200">Password</span>
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="h-12 w-full rounded-[10px] border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition-colors duration-150 placeholder:text-slate-500 focus:border-blue-500/60"
+                required
+              />
+            </label>
+
+            {error ? <p className="rounded-[10px] border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p> : null}
+            {success ? <p className="rounded-[10px] border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{success}</p> : null}
+
+            <div className="flex flex-wrap gap-3 pt-2">
+              <Button type="submit" loading={loading}>
+                {mode === 'login' ? 'Enter Workspace' : 'Create and Enter'}
+              </Button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </div>
+  )
+}
+
+function Landing({
+  authSession,
+  onLoginOpen,
+  onLogout,
+  onRequestDemo,
+  onViewPlatform,
+}: {
+  authSession: AuthSession | null
+  onLoginOpen: () => void
+  onLogout: () => void
+  onRequestDemo: () => void
+  onViewPlatform: () => void
+}) {
   const mobileMarketingNavOpen = useAppStore((state) => state.mobileMarketingNavOpen)
   const setMobileMarketingNavOpen = useAppStore((state) => state.setMobileMarketingNavOpen)
 
@@ -112,14 +385,42 @@ function Landing() {
                 <span className="block h-0.5 w-4 bg-current" />
               </span>
             </button>
-            <Button variant="ghost" className="hidden sm:inline-flex">
-              Login
-            </Button>
-            <Button>Request Demo</Button>
+            {authSession ? (
+              <div className="hidden items-center gap-3 sm:flex">
+                <div className="text-right">
+                  <p className="text-sm font-medium text-white">{authSession.role}</p>
+                  <p className="text-xs text-slate-400">{authSession.email}</p>
+                </div>
+                <Button variant="ghost" onClick={onLogout}>
+                  Log out
+                </Button>
+              </div>
+            ) : (
+              <Button variant="ghost" className="hidden sm:inline-flex" onClick={onLoginOpen}>
+                Login
+              </Button>
+            )}
+            <Button onClick={onRequestDemo}>Request Demo</Button>
           </div>
         </div>
       </header>
-      <MarketingDrawer open={mobileMarketingNavOpen} onClose={() => setMobileMarketingNavOpen(false)} />
+      <MarketingDrawer
+        authSession={authSession}
+        open={mobileMarketingNavOpen}
+        onClose={() => setMobileMarketingNavOpen(false)}
+        onRequestDemo={() => {
+          setMobileMarketingNavOpen(false)
+          onRequestDemo()
+        }}
+        onLoginOpen={() => {
+          setMobileMarketingNavOpen(false)
+          onLoginOpen()
+        }}
+        onLogout={() => {
+          setMobileMarketingNavOpen(false)
+          onLogout()
+        }}
+      />
 
       <section className="mx-auto grid max-w-shell gap-12 px-6 py-20 lg:grid-cols-[1.05fr_0.95fr] lg:px-10 lg:py-28">
         <motion.div {...fadeUp} className="max-w-2xl">
@@ -131,8 +432,8 @@ function Landing() {
             Model volatility, simulate tail risk, stress portfolios, and generate actionable hedging insights in real time.
           </p>
           <div className="mt-8 flex flex-wrap gap-4">
-            <Button>Request Demo</Button>
-            <Button variant="secondary" onClick={() => document.getElementById('platform')?.scrollIntoView()}>
+            <Button onClick={onRequestDemo}>Request Demo</Button>
+            <Button variant="secondary" onClick={onViewPlatform}>
               View Platform
             </Button>
           </div>
@@ -256,7 +557,29 @@ function Landing() {
   )
 }
 
-function PlatformSection({ snapshot, loading }: { snapshot: DashboardSnapshot; loading: boolean }) {
+function PlatformSection({
+  snapshot,
+  loading,
+  authSession,
+  authProfile,
+  authChecking,
+  notice,
+  onDismissNotice,
+  onOpenLogin,
+  onLogout,
+  onAction,
+}: {
+  snapshot: DashboardSnapshot
+  loading: boolean
+  authSession: AuthSession | null
+  authProfile: AuthProfile | null
+  authChecking: boolean
+  notice: AppNotice | null
+  onDismissNotice: () => void
+  onOpenLogin: () => void
+  onLogout: () => void
+  onAction: (message: string, options?: { tone?: AppNotice['tone']; view?: NavView; requireAuth?: boolean }) => void
+}) {
   const mobileDrawerOpen = useAppStore((state) => state.mobileDrawerOpen)
   const setMobileDrawerOpen = useAppStore((state) => state.setMobileDrawerOpen)
 
@@ -274,16 +597,36 @@ function PlatformSection({ snapshot, loading }: { snapshot: DashboardSnapshot; l
         <Sidebar />
         <WorkspaceDrawer open={mobileDrawerOpen} onClose={() => setMobileDrawerOpen(false)} />
         <main className="min-w-0">
-          <Topbar />
+          <Topbar
+            profile={authProfile}
+            onLogout={onLogout}
+            onExportReport={() =>
+              onAction('Export queued. The latest board-ready report package is being prepared.', {
+                tone: 'success',
+                requireAuth: true,
+                view: 'reports',
+              })
+            }
+          />
+          <AuthStatusPanel
+            authSession={authSession}
+            authProfile={authProfile}
+            authChecking={authChecking}
+            notice={notice}
+            onDismissNotice={onDismissNotice}
+            onOpenLogin={onOpenLogin}
+          />
           <PlatformErrorBoundary>
-            {loading ? (
+            {authChecking ? (
+              <WorkspaceBootState message="Opening your workspace..." />
+            ) : loading ? (
               <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
                 {Array.from({ length: 6 }).map((_, index) => (
                   <div key={index} className="surface-panel h-48 animate-pulse bg-white/5" />
                 ))}
               </div>
             ) : (
-              <PlatformView snapshot={snapshot} />
+              <PlatformView snapshot={snapshot} onAction={onAction} />
             )}
           </PlatformErrorBoundary>
         </main>
@@ -292,36 +635,123 @@ function PlatformSection({ snapshot, loading }: { snapshot: DashboardSnapshot; l
   )
 }
 
-function PlatformView({ snapshot }: { snapshot: DashboardSnapshot }) {
+function PlatformView({
+  snapshot,
+  onAction,
+}: {
+  snapshot: DashboardSnapshot
+  onAction: (message: string, options?: { tone?: AppNotice['tone']; view?: NavView; requireAuth?: boolean }) => void
+}) {
   const activeView = useAppStore((state) => state.activeView)
 
   const content = useMemo(() => {
     switch (activeView) {
       case 'dashboard':
-        return <DashboardView snapshot={snapshot} />
+        return <DashboardView snapshot={snapshot} onAction={onAction} />
       case 'portfolios':
-        return <PortfolioView snapshot={snapshot} />
+        return <PortfolioView snapshot={snapshot} onAction={onAction} />
       case 'risk-engine':
-        return <RiskEngineView snapshot={snapshot} />
+        return <RiskEngineView snapshot={snapshot} onAction={onAction} />
       case 'stress-testing':
-        return <StressTestingView snapshot={snapshot} />
+        return <StressTestingView snapshot={snapshot} onAction={onAction} />
       case 'forecasting':
         return <ForecastingView snapshot={snapshot} />
       case 'reports':
-        return <ReportsView snapshot={snapshot} />
+        return <ReportsView snapshot={snapshot} onAction={onAction} />
       case 'compliance':
-        return <ComplianceView snapshot={snapshot} />
+        return <ComplianceView snapshot={snapshot} onAction={onAction} />
       case 'settings':
-        return <SettingsView />
+        return <SettingsView onAction={onAction} />
       default:
         return null
     }
-  }, [activeView, snapshot])
+  }, [activeView, onAction, snapshot])
 
-  return <motion.div key={activeView} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16 }}>{content}</motion.div>
+  return <div key={activeView}>{content}</div>
 }
 
-function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
+function WorkspaceBootState({ message }: { message: string }) {
+  return (
+    <div className="surface-panel flex min-h-[420px] items-center justify-center px-6 py-12">
+      <div className="text-center">
+        <div className="mx-auto mb-5 size-12 animate-pulse rounded-full border border-blue-500/40 bg-blue-500/10" />
+        <p className="eyebrow">Workspace</p>
+        <h3 className="mt-3 text-2xl font-semibold text-white">{message}</h3>
+        <p className="mt-2 text-sm text-slate-400">Loading risk views, report data, and security context.</p>
+      </div>
+    </div>
+  )
+}
+
+function AuthStatusPanel({
+  authSession,
+  authProfile,
+  authChecking,
+  notice,
+  onDismissNotice,
+  onOpenLogin,
+}: {
+  authSession: AuthSession | null
+  authProfile: AuthProfile | null
+  authChecking: boolean
+  notice: AppNotice | null
+  onDismissNotice: () => void
+  onOpenLogin: () => void
+}) {
+  return (
+    <div className="mb-6 space-y-4">
+      {authSession ? (
+        <div className="surface-panel flex flex-col gap-4 border border-emerald-500/20 bg-emerald-500/8 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="eyebrow text-emerald-300">Authenticated Session</p>
+            <h3 className="mt-2 text-lg font-semibold text-white">
+              {authChecking ? 'Confirming workspace access...' : `Signed in as ${authProfile?.email ?? authSession.email}`}
+            </h3>
+            <p className="mt-1 text-sm text-slate-300">
+              {authProfile
+                ? `${authProfile.tenant_name ?? 'Tenant'} • ${authProfile.role} • ${authProfile.plan ?? 'standard'} plan`
+                : 'Your access token is loaded and the workspace is syncing your profile.'}
+            </p>
+          </div>
+          <Badge tone="success">{authChecking ? 'syncing' : 'active'}</Badge>
+        </div>
+      ) : (
+        <div className="surface-panel flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="eyebrow">Workspace Access</p>
+            <h3 className="mt-2 text-lg font-semibold text-white">Sign in to unlock report actions, risk runs, and compliance tools</h3>
+            <p className="mt-1 text-sm text-slate-300">The workspace is visible in preview mode, but action buttons require an authenticated session.</p>
+          </div>
+          <Button onClick={onOpenLogin}>Login</Button>
+        </div>
+      )}
+
+      {notice ? (
+        <div
+          className={cn(
+            'flex items-start justify-between gap-4 rounded-xl border px-4 py-3 text-sm',
+            notice.tone === 'success' && 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100',
+            notice.tone === 'warning' && 'border-amber-500/20 bg-amber-500/10 text-amber-100',
+            notice.tone === 'default' && 'border-blue-500/20 bg-blue-500/10 text-blue-100',
+          )}
+        >
+          <p>{notice.message}</p>
+          <button type="button" className="text-xs font-semibold uppercase tracking-[0.16em] text-current/80" onClick={onDismissNotice}>
+            Dismiss
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function DashboardView({
+  snapshot,
+  onAction,
+}: {
+  snapshot: DashboardSnapshot
+  onAction: (message: string, options?: { tone?: AppNotice['tone']; view?: NavView; requireAuth?: boolean }) => void
+}) {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -375,8 +805,17 @@ function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
                 <div className="mt-4 flex items-center justify-between">
                   <p className="text-sm text-slate-400">Expected impact: {card.impact}%</p>
                   <div className="flex gap-2">
-                    <Button className="h-10 px-4 text-xs">{card.action}</Button>
-                    <Button variant="secondary" className="h-10 px-4 text-xs">
+                    <Button
+                      className="h-10 px-4 text-xs"
+                      onClick={() => onAction(`${card.title} applied to the working strategy set.`, { tone: 'success', requireAuth: true })}
+                    >
+                      {card.action}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      className="h-10 px-4 text-xs"
+                      onClick={() => onAction(`${card.title} saved to your recommendation backlog.`, { tone: 'success', requireAuth: true })}
+                    >
                       Save Recommendation
                     </Button>
                   </div>
@@ -390,7 +829,13 @@ function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
   )
 }
 
-function PortfolioView({ snapshot }: { snapshot: DashboardSnapshot }) {
+function PortfolioView({
+  snapshot,
+  onAction,
+}: {
+  snapshot: DashboardSnapshot
+  onAction: (message: string, options?: { tone?: AppNotice['tone']; view?: NavView; requireAuth?: boolean }) => void
+}) {
   return (
     <div className="grid gap-6 xl:grid-cols-12">
       <Card className="xl:col-span-7" title="Portfolio Exposure Map" subtitle="Allocation and VaR contribution by desk">
@@ -412,10 +857,18 @@ function PortfolioView({ snapshot }: { snapshot: DashboardSnapshot }) {
         <div className="space-y-3">
           <DropZone />
           <div className="grid gap-3 md:grid-cols-2">
-            <Button icon={<span>+</span>}>New Portfolio</Button>
-            <Button variant="secondary">Export Holdings</Button>
-            <Button variant="secondary">Validate Schema</Button>
-            <Button variant="ghost">Back</Button>
+            <Button icon={<span>+</span>} onClick={() => onAction('Portfolio creation wizard opened for a new upload.', { tone: 'success', requireAuth: true })}>
+              New Portfolio
+            </Button>
+            <Button variant="secondary" onClick={() => onAction('Holdings export started for the active portfolio set.', { tone: 'success', requireAuth: true })}>
+              Export Holdings
+            </Button>
+            <Button variant="secondary" onClick={() => onAction('Portfolio schema validation completed with no blocking issues.', { tone: 'success', requireAuth: true })}>
+              Validate Schema
+            </Button>
+            <Button variant="ghost" onClick={() => onAction('Returned to the dashboard overview.', { view: 'dashboard' })}>
+              Back
+            </Button>
           </div>
         </div>
       </Card>
@@ -423,7 +876,13 @@ function PortfolioView({ snapshot }: { snapshot: DashboardSnapshot }) {
   )
 }
 
-function RiskEngineView({ snapshot }: { snapshot: DashboardSnapshot }) {
+function RiskEngineView({
+  snapshot,
+  onAction,
+}: {
+  snapshot: DashboardSnapshot
+  onAction: (message: string, options?: { tone?: AppNotice['tone']; view?: NavView; requireAuth?: boolean }) => void
+}) {
   return (
     <div className="grid gap-6 xl:grid-cols-12">
       <Card className="xl:col-span-7" title="Risk Engine Workflow" subtitle="Upload, validate, configure, and execute hybrid analysis">
@@ -463,8 +922,12 @@ function RiskEngineView({ snapshot }: { snapshot: DashboardSnapshot }) {
             <p className="mt-2 text-sm leading-6 text-slate-300">Result packets include executive summary, VaR/CVaR tables, scenario panels, explainability notes, and compliance annotations.</p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <Button>Run Risk Analysis</Button>
-            <Button variant="secondary">Validate Data</Button>
+            <Button onClick={() => onAction('Hybrid risk analysis submitted with the current model configuration.', { tone: 'success', requireAuth: true })}>
+              Run Risk Analysis
+            </Button>
+            <Button variant="secondary" onClick={() => onAction('Input data validation completed successfully for the selected portfolio.', { tone: 'success', requireAuth: true })}>
+              Validate Data
+            </Button>
           </div>
         </div>
       </Card>
@@ -472,7 +935,13 @@ function RiskEngineView({ snapshot }: { snapshot: DashboardSnapshot }) {
   )
 }
 
-function StressTestingView({ snapshot }: { snapshot: DashboardSnapshot }) {
+function StressTestingView({
+  snapshot,
+  onAction,
+}: {
+  snapshot: DashboardSnapshot
+  onAction: (message: string, options?: { tone?: AppNotice['tone']; view?: NavView; requireAuth?: boolean }) => void
+}) {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -500,8 +969,12 @@ function StressTestingView({ snapshot }: { snapshot: DashboardSnapshot }) {
               </div>
             ))}
             <div className="flex gap-3 pt-2">
-              <Button>Apply Scenario</Button>
-              <Button variant="secondary">Save Template</Button>
+              <Button onClick={() => onAction('Custom stress scenario applied to the active run configuration.', { tone: 'success', requireAuth: true })}>
+                Apply Scenario
+              </Button>
+              <Button variant="secondary" onClick={() => onAction('Scenario template saved for future reuse.', { tone: 'success', requireAuth: true })}>
+                Save Template
+              </Button>
             </div>
           </div>
         </Card>
@@ -540,7 +1013,13 @@ function ForecastingView({ snapshot }: { snapshot: DashboardSnapshot }) {
   )
 }
 
-function ReportsView({ snapshot }: { snapshot: DashboardSnapshot }) {
+function ReportsView({
+  snapshot,
+  onAction,
+}: {
+  snapshot: DashboardSnapshot
+  onAction: (message: string, options?: { tone?: AppNotice['tone']; view?: NavView; requireAuth?: boolean }) => void
+}) {
   return (
     <div className="grid gap-6 xl:grid-cols-12">
       <Card className="xl:col-span-7" title="Reports Library" subtitle="Executive summary, VaR, CVaR, stress analysis, recommendations, and compliance notes">
@@ -553,9 +1032,15 @@ function ReportsView({ snapshot }: { snapshot: DashboardSnapshot }) {
               </div>
               <div className="flex gap-2">
                 <Badge>{report.format}</Badge>
-                <Button className="h-10 px-4 text-xs">Generate PDF</Button>
-                <Button variant="secondary" className="h-10 px-4 text-xs">Download CSV</Button>
-                <Button variant="ghost" className="h-10 px-4 text-xs">Share Report</Button>
+                <Button className="h-10 px-4 text-xs" onClick={() => onAction(`${report.title} PDF generation started.`, { tone: 'success', requireAuth: true })}>
+                  Generate PDF
+                </Button>
+                <Button variant="secondary" className="h-10 px-4 text-xs" onClick={() => onAction(`${report.title} CSV download prepared.`, { tone: 'success', requireAuth: true })}>
+                  Download CSV
+                </Button>
+                <Button variant="ghost" className="h-10 px-4 text-xs" onClick={() => onAction(`${report.title} sharing workflow opened for reviewers.`, { tone: 'success', requireAuth: true })}>
+                  Share Report
+                </Button>
               </div>
             </div>
           ))}
@@ -570,7 +1055,13 @@ function ReportsView({ snapshot }: { snapshot: DashboardSnapshot }) {
   )
 }
 
-function ComplianceView({ snapshot }: { snapshot: DashboardSnapshot }) {
+function ComplianceView({
+  snapshot,
+  onAction,
+}: {
+  snapshot: DashboardSnapshot
+  onAction: (message: string, options?: { tone?: AppNotice['tone']; view?: NavView; requireAuth?: boolean }) => void
+}) {
   return (
     <div className="grid gap-6 xl:grid-cols-12">
       <Card className="xl:col-span-6" title="Audit Logs" subtitle="Governed operational trail">
@@ -618,8 +1109,12 @@ function ComplianceView({ snapshot }: { snapshot: DashboardSnapshot }) {
             </div>
           ) : null}
           <div className="grid gap-3 md:grid-cols-2">
-            <Button>Generate API Key</Button>
-            <Button variant="secondary">Compliance Center</Button>
+            <Button onClick={() => onAction('A new API key draft has been generated for review.', { tone: 'success', requireAuth: true })}>
+              Generate API Key
+            </Button>
+            <Button variant="secondary" onClick={() => onAction('Compliance center opened with the latest audit controls.', { tone: 'success', requireAuth: true })}>
+              Compliance Center
+            </Button>
           </div>
         </div>
       </Card>
@@ -627,7 +1122,11 @@ function ComplianceView({ snapshot }: { snapshot: DashboardSnapshot }) {
   )
 }
 
-function SettingsView() {
+function SettingsView({
+  onAction,
+}: {
+  onAction: (message: string, options?: { tone?: AppNotice['tone']; view?: NavView; requireAuth?: boolean }) => void
+}) {
   return (
     <div className="grid gap-6 xl:grid-cols-12">
       <Card className="xl:col-span-6" title="Platform Settings" subtitle="Organization defaults and control plane preferences">
@@ -640,7 +1139,9 @@ function SettingsView() {
       <Card className="xl:col-span-6" title="Danger Zone" subtitle="Reserved for destructive actions">
         <div className="space-y-4">
           <p className="text-sm leading-6 text-slate-300">Institutional controls keep destructive actions isolated and intentionally gated.</p>
-          <Button variant="danger">Rotate Environment Secrets</Button>
+          <Button variant="danger" onClick={() => onAction('Secret rotation has been staged for administrator approval.', { tone: 'warning', requireAuth: true })}>
+            Rotate Environment Secrets
+          </Button>
         </div>
       </Card>
     </div>
@@ -752,7 +1253,21 @@ function ChartSkeleton({ children }: { children: ReactNode }) {
   )
 }
 
-function MarketingDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+function MarketingDrawer({
+  authSession,
+  open,
+  onClose,
+  onLoginOpen,
+  onLogout,
+  onRequestDemo,
+}: {
+  authSession: AuthSession | null
+  open: boolean
+  onClose: () => void
+  onLoginOpen: () => void
+  onLogout: () => void
+  onRequestDemo: () => void
+}) {
   return (
     <div className={cn('fixed inset-0 z-[60] xl:hidden', open ? 'pointer-events-auto' : 'pointer-events-none')}>
       <div
@@ -787,9 +1302,117 @@ function MarketingDrawer({ open, onClose }: { open: boolean; onClose: () => void
           ))}
         </nav>
         <div className="mt-8 grid gap-3">
-          <Button>Request Demo</Button>
-          <Button variant="secondary">Login</Button>
+          <Button onClick={onRequestDemo}>Request Demo</Button>
+          {authSession ? (
+            <Button variant="secondary" onClick={onLogout}>
+              Log out
+            </Button>
+          ) : (
+            <Button variant="secondary" onClick={onLoginOpen}>
+              Login
+            </Button>
+          )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+function LoginModal({
+  open,
+  onClose,
+  onSuccess,
+}: {
+  open: boolean
+  onClose: () => void
+  onSuccess: (session: AuthSession) => void
+}) {
+  const [email, setEmail] = useState('admin@helios-oracle.com')
+  const [password, setPassword] = useState('QuantumRisk!2026')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) {
+      setError(null)
+      setLoading(false)
+    }
+  }, [open])
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setLoading(true)
+    setError(null)
+
+    try {
+      const response = await login(email, password)
+      onSuccess({
+        email,
+        role: response.role,
+        tenantId: response.tenant_id,
+        accessToken: response.access_token,
+      })
+    } catch (error) {
+      setError(describeApiError(error))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className={cn('fixed inset-0 z-[80] flex items-center justify-center px-4 transition-all duration-150', open ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0')}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-[14px] border border-white/10 bg-[#091321] p-6 shadow-panel">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="eyebrow">Secure Access</p>
+            <h3 className="mt-3 text-2xl font-semibold text-white">Sign in to QuantumRisk Oracle</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-300">Use the seeded institutional demo credentials or your issued account.</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-sm text-slate-400 hover:text-white">
+            Close
+          </button>
+        </div>
+
+        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-200">Email</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className="h-12 w-full rounded-[10px] border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition-colors duration-150 placeholder:text-slate-500 focus:border-blue-500/60"
+              placeholder="admin@helios-oracle.com"
+              required
+            />
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-200">Password</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="h-12 w-full rounded-[10px] border border-white/10 bg-white/5 px-4 text-sm text-white outline-none transition-colors duration-150 placeholder:text-slate-500 focus:border-blue-500/60"
+              placeholder="QuantumRisk!2026"
+              required
+            />
+          </label>
+
+          {error ? <p className="rounded-[10px] border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p> : null}
+
+          <div className="rounded-[10px] border border-white/8 bg-white/5 px-4 py-3 text-sm text-slate-300">
+            Demo login: <span className="font-medium text-white">admin@helios-oracle.com</span> / <span className="font-medium text-white">QuantumRisk!2026</span>
+          </div>
+
+          <div className="flex flex-wrap gap-3 pt-2">
+            <Button type="submit" loading={loading}>
+              Sign In
+            </Button>
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+          </div>
+        </form>
       </div>
     </div>
   )

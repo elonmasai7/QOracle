@@ -4,8 +4,8 @@ from datetime import timedelta
 
 class Config:
     ENV = os.getenv("ENV", "dev")
-    SECRET_KEY = os.getenv("SECRET_KEY", "change-me")
-    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-too")
+    SECRET_KEY = os.getenv("SECRET_KEY", "change-me-please-use-a-strong-secret-key")
+    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-please-use-a-strong-jwt-secret-key")
 
     SQLALCHEMY_DATABASE_URI = os.getenv(
         "DATABASE_URL",
